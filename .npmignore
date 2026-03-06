@@ -1,0 +1,41 @@
+# Development files
+examples/
+tests/
+__tests__/
+*.test.js
+*.spec.js
+coverage/
+.nyc_output/
+
+# Config files
+.eslintrc*
+.prettierrc*
+jest.config.*
+tsconfig.json
+.editorconfig
+
+# Documentation source
+docs/
+jsdoc.json
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+*.log
+npm-debug.log*
+
+# Environment
+.env
+.env.*
