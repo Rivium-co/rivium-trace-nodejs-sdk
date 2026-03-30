@@ -10,13 +10,28 @@ npm install @rivium-trace/nodejs-sdk
 
 ## Quick Start
 
+### Rivium Cloud (Default)
+
 ```javascript
 const RiviumTrace = require('@rivium-trace/nodejs-sdk');
 
-// Initialize RiviumTrace
 RiviumTrace.init({
   apiKey: 'rv_live_your_api_key_here',
   serverSecret: 'rv_srv_your_server_secret_here',
+  environment: 'production',
+  release: '1.0.0'
+});
+```
+
+### Self-Hosted
+
+If you're running [RiviumTrace Self-Hosted](https://github.com/Rivium-co/rivium-selfhosted), just add `apiUrl`:
+
+```javascript
+RiviumTrace.init({
+  apiKey: 'rv_live_your_api_key_here',
+  serverSecret: 'rv_srv_your_server_secret_here',
+  apiUrl: 'http://your-server:3001',  // Your self-hosted Trace API
   environment: 'production',
   release: '1.0.0'
 });
@@ -39,6 +54,9 @@ RiviumTrace.init({
   // Required - Get from Rivium Console
   apiKey: 'rv_live_your_api_key',              // format: rv_live_xxx or rv_test_xxx
   serverSecret: 'rv_srv_your_server_secret',   // format: rv_srv_xxx
+
+  // Optional — for self-hosted only (defaults to https://trace.rivium.co)
+  apiUrl: 'http://your-server:3001',
 
   // Optional
   environment: 'production',               // Environment name
@@ -199,6 +217,7 @@ const app = express();
 RiviumTrace.init({
   apiKey: 'rv_live_your_api_key',
   serverSecret: 'rv_srv_your_server_secret',
+  // apiUrl: 'http://your-server:3001',  // Uncomment for self-hosted
   environment: process.env.NODE_ENV
 });
 
