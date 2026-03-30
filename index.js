@@ -371,6 +371,7 @@ class RiviumTrace {
     const config = RiviumTrace._instance._config;
     RiviumTrace._instance._logService = new LogService({
       apiKey: config.apiKey,
+      apiUrl: config.apiUrl,
       serverSecret: config.serverSecret,
       sourceId: options.sourceId,
       sourceName: options.sourceName,
