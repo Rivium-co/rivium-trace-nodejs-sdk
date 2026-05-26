@@ -10,7 +10,7 @@ npm install @rivium-trace/nodejs-sdk
 
 ## Quick Start
 
-### Rivium Cloud (Default)
+### Initialize the SDK (Default: Rivium Cloud)
 
 ```javascript
 const RiviumTrace = require('@rivium-trace/nodejs-sdk');
@@ -23,7 +23,7 @@ RiviumTrace.init({
 });
 ```
 
-### Self-Hosted
+### Initialize the SDK (Advanced: Self-Hosted)
 
 If you're running [RiviumTrace Self-Hosted](https://github.com/Rivium-co/rivium-selfhosted), just add `apiUrl`:
 
