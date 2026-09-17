@@ -5,7 +5,7 @@
 import { Request, Response, NextFunction, RequestHandler } from 'express';
 
 export interface RiviumTraceInitOptions {
-  /** Your RiviumTrace API key from Console (required) - format: rv_live_xxx or rv_test_xxx */
+  /** Your RiviumTrace API key from Console (required) - format: rv_live_xxx */
   apiKey: string;
   /** Server secret for server-side authentication (required) - format: rv_srv_xxx */
   serverSecret: string;

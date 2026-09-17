@@ -43,27 +43,28 @@ describe('RiviumTraceConfig', () => {
       expect(cfg.apiKey).toBe('rv_live_xyz');
     });
 
-    test('accepts rv_test_ prefix', () => {
-      const cfg = new RiviumTraceConfig({ ...validOptions(), apiKey: 'rv_test_xyz' });
-      expect(cfg.apiKey).toBe('rv_test_xyz');
+    test('rejects rv_test_ prefix (never issued)', () => {
+      expect(
+        () => new RiviumTraceConfig({ ...validOptions(), apiKey: 'rv_test_xyz' })
+      ).toThrow('API key must start with rv_live_');
     });
 
     test('rejects nl_live_ prefix (legacy)', () => {
       expect(
         () => new RiviumTraceConfig({ ...validOptions(), apiKey: 'nl_live_xyz' })
-      ).toThrow('API key must start with rv_live_ or rv_test_');
+      ).toThrow('API key must start with rv_live_');
     });
 
     test('rejects nl_test_ prefix (legacy)', () => {
       expect(
         () => new RiviumTraceConfig({ ...validOptions(), apiKey: 'nl_test_xyz' })
-      ).toThrow('API key must start with rv_live_ or rv_test_');
+      ).toThrow('API key must start with rv_live_');
     });
 
     test('rejects API key with invalid prefix', () => {
       expect(
         () => new RiviumTraceConfig({ ...validOptions(), apiKey: 'invalid_key' })
-      ).toThrow('API key must start with rv_live_ or rv_test_');
+      ).toThrow('API key must start with rv_live_');
     });
 
     test('rejects empty string API key', () => {
