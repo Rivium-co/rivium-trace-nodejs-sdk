@@ -66,6 +66,12 @@ class RiviumTrace {
   }
 
   async _captureException(error, options = {}) {
+    // Exceptions the app said it never wants reported.
+    if (!this._config.shouldCaptureException(error)) {
+      if (this._config.debug) console.log('[RiviumTrace] Error ignored by ignoredExceptions');
+      return;
+    }
+
     // Sample rate check
     if (this._sampleRate < 1.0 && Math.random() > this._sampleRate) {
       if (this._config.debug) console.log('[RiviumTrace] Error dropped due to sample rate');

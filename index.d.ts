@@ -2,7 +2,32 @@
 // Project: https://rivium.co
 // Definitions by: RiviumTrace Team <support@rivium.co>
 
-import { Request, Response, NextFunction, RequestHandler } from 'express';
+/**
+ * Express is an optional peer dependency: this SDK works in any Node process,
+ * and only the middleware needs it. Importing its types here made TypeScript
+ * fail for anyone who does not have @types/express installed, so the two
+ * shapes the public API touches are described structurally instead. An Express
+ * Request and RequestHandler satisfy them.
+ */
+export interface ExpressLikeRequest {
+  method?: string;
+  url?: string;
+  originalUrl?: string;
+  path?: string;
+  headers?: Record<string, unknown>;
+  body?: unknown;
+  query?: unknown;
+  params?: unknown;
+  ip?: string;
+  get?(name: string): string | undefined;
+  [key: string]: unknown;
+}
+
+export type ExpressLikeRequestHandler = (
+  req: ExpressLikeRequest,
+  res: unknown,
+  next: (error?: unknown) => void,
+) => void;
 
 export interface RiviumTraceInitOptions {
   /** Your RiviumTrace API key from Console (required) - format: rv_live_xxx */
@@ -27,6 +52,16 @@ export interface RiviumTraceInitOptions {
   maxBreadcrumbs?: number;
   /** Callback to modify or filter errors before sending */
   beforeSend?: (error: RiviumTraceError) => RiviumTraceError | null;
+  /**
+   * Exceptions never worth reporting. A constructor, an error name, or a
+   * RegExp matched against the name.
+   */
+  ignoredExceptions?: Array<Function | string | RegExp>;
+  /**
+   * Request paths the Express middleware should not report or time. A glob
+   * ('/health*'), an exact path, or a RegExp.
+   */
+  ignoredPaths?: Array<string | RegExp>;
   /** Sample rate for error/message capture (0.0 to 1.0, default: 1.0) */
   sampleRate?: number;
 }
@@ -62,7 +97,7 @@ export interface CaptureOptions {
 export interface Scope {
   setExtra(key: string, value: unknown): void;
   setUser(user: UserContext): void;
-  addBreadcrumb(breadcrumb: BreadcrumbOptions): void;
+  addBreadcrumb(breadcrumb: Breadcrumb | BreadcrumbOptions): void;
 }
 
 export interface Stats {
@@ -95,7 +130,7 @@ export class RiviumTraceError {
   toJSON(): Record<string, unknown>;
   setExtra(key: string, value: unknown): this;
   setExtras(extras: Record<string, unknown>): this;
-  setRequestContext(req: Request): this;
+  setRequestContext(req: ExpressLikeRequest): this;
   addNodeContext(): this;
 
   static fromError(error: Error, options?: CaptureOptions & { environment?: string; release?: string; url?: string }): RiviumTraceError;
@@ -114,6 +149,10 @@ export class RiviumTraceConfig {
   captureUnhandledRejections: boolean;
   maxBreadcrumbs: number;
   beforeSend: ((error: RiviumTraceError) => RiviumTraceError | null) | null;
+  ignoredExceptions: Array<Function | string | RegExp>;
+  ignoredPaths: Array<string | RegExp>;
+  shouldCaptureException(error: Error): boolean;
+  shouldIgnorePath(path: string): boolean;
 
   constructor(options: RiviumTraceInitOptions);
 
@@ -133,7 +172,7 @@ export class Breadcrumb {
 
   toJSON(): BreadcrumbOptions;
 
-  static http(method: string, url: string, statusCode: number, duration: number): Breadcrumb;
+  static http(method: string, url: string, statusCode?: number, duration?: number): Breadcrumb;
   static database(query: string, duration: number, error?: Error | null): Breadcrumb;
   static console(level: string, message: string, ...args: unknown[]): Breadcrumb;
   static navigation(from: string, to: string, method?: string): Breadcrumb;
@@ -309,7 +348,7 @@ declare class RiviumTrace {
   static captureMessage(message: string, options?: CaptureOptions): Promise<void>;
 
   /** Add a breadcrumb */
-  static addBreadcrumb(breadcrumb: BreadcrumbOptions): void;
+  static addBreadcrumb(breadcrumb: Breadcrumb | BreadcrumbOptions): void;
 
   /** Set request context */
   static setRequestContext(context: RequestContext): void;
@@ -318,7 +357,7 @@ declare class RiviumTrace {
   static setUser(user: UserContext): void;
 
   /** Express error handling middleware */
-  static expressMiddleware(): RequestHandler;
+  static expressMiddleware(): ExpressLikeRequestHandler;
 
   /** Get current configuration */
   static getConfig(): RiviumTraceConfig | null;
@@ -389,4 +428,3 @@ declare class RiviumTrace {
 }
 
 export default RiviumTrace;
-export = RiviumTrace;

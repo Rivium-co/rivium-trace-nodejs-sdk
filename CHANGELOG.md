@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-09-25
+
+### Added
+- `ignoredExceptions`: exceptions that are never reported, given as a
+  constructor, an error name, or a regular expression.
+- `ignoredPaths`: request paths the Express middleware skips — health checks,
+  metrics endpoints — given as a glob, an exact path, or a regular expression.
+
+### Fixed
+- TypeScript definitions no longer require `@types/express`, which is only
+  needed if you use the middleware.
+- `addBreadcrumb(Breadcrumb.http(...))` now type-checks, and `Breadcrumb.http`
+  correctly marks its status code and duration as optional.
+
 ## [0.1.5] - 2026-08-15
 
 ### Added
