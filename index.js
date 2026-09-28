@@ -9,6 +9,17 @@ const { LogService, LogLevel, LogEntry } = require('./lib/logging/LogService');
 const { PerformanceSpan, generateTraceId, generateSpanId } = require('./lib/performance/PerformanceSpan');
 const { PerformanceClient } = require('./lib/performance/PerformanceClient');
 
+// The Trace messages table only accepts these four levels.
+const MESSAGE_LEVELS = ['debug', 'info', 'warning', 'error'];
+const MESSAGE_LEVEL_ALIASES = { warn: 'warning', fatal: 'error', critical: 'error', trace: 'debug', log: 'info' };
+
+function normalizeMessageLevel(level) {
+  if (typeof level !== 'string') return 'info';
+  const lower = level.toLowerCase();
+  if (MESSAGE_LEVELS.includes(lower)) return lower;
+  return MESSAGE_LEVEL_ALIASES[lower] || 'info';
+}
+
 class RiviumTrace {
   static _instance = null;
 
@@ -121,25 +132,41 @@ class RiviumTrace {
     }
 
     try {
-      const riviumTraceError = RiviumTraceError.fromMessage(message, {
+      // A message is not an issue: it goes to /api/messages with the same
+      // shape the Next.js, iOS, Android and Flutter SDKs send, never to
+      // /api/errors (which turned every message into an issue with a fake
+      // stack trace).
+      const extra = { ...(options.extra || {}) };
+      if (this._requestContext) extra.request_context = this._requestContext;
+      if (this._userContext) extra.user_context = this._userContext;
+      const sdk = extra._sdk && typeof extra._sdk === 'object' && !Array.isArray(extra._sdk) ? extra._sdk : {};
+      extra._sdk = { sdk_version: RiviumTraceConfig.SDK_VERSION, ...sdk };
+
+      const userId = this._userContext?.id;
+
+      let riviumTraceMessage = {
+        message: String(message),
+        level: normalizeMessageLevel(options.level),
+        platform: 'nodejs',
         environment: this._config.environment,
         release: this._config.release,
-        extra: {
-          ...options.extra,
-          breadcrumbs: this._breadcrumbManager.getRecent(10),
-          request_context: this._requestContext,
-          user_context: this._userContext
-        }
-      });
+        timestamp: new Date().toISOString(),
+        user_id: userId !== undefined && userId !== null ? String(userId) : undefined,
+        extra,
+        tags: options.tags || {},
+        breadcrumbs: this._breadcrumbManager.getRecent(10).map((b) => (b.toJSON ? b.toJSON() : b)),
+      };
 
-      riviumTraceError.addNodeContext();
-
+      // Same beforeSend as errors: a falsy return drops the message. The
+      // callback receives this plain message object (no stack_trace); if it
+      // returns an object, that object is what gets sent.
       if (this._config.beforeSend) {
-        const modifiedError = this._config.beforeSend(riviumTraceError);
-        if (!modifiedError) return;
+        const modified = this._config.beforeSend(riviumTraceMessage);
+        if (!modified) return;
+        if (typeof modified === 'object') riviumTraceMessage = modified;
       }
 
-      await this._sendError(riviumTraceError);
+      await this._sendMessage(riviumTraceMessage);
     } catch (err) {
       if (this._config.debug) {
         console.error('[RiviumTrace] Error capturing message:', err);
@@ -250,6 +277,25 @@ class RiviumTrace {
 
     if (!result.success && this._config.debug) {
       console.log(`[RiviumTrace] Failed to send error: ${result.error || result.reason}`);
+    }
+  }
+
+  async _sendMessage(riviumTraceMessage) {
+    if (!this._config.isEnabled()) return;
+
+    // Same flood protection as errors (keyed on message + platform + environment).
+    const rateLimitResult = this._rateLimiter.shouldSendError(riviumTraceMessage);
+    if (!rateLimitResult.allowed) {
+      if (this._config.debug) {
+        console.log(`[RiviumTrace] Rate limited: ${rateLimitResult.reason}`);
+      }
+      return;
+    }
+
+    const result = await this._httpClient.sendMessage(riviumTraceMessage);
+
+    if (!result.success && this._config.debug) {
+      console.log(`[RiviumTrace] Failed to send message: ${result.error || result.reason}`);
     }
   }
 

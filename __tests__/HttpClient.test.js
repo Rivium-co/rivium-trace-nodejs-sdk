@@ -111,6 +111,66 @@ describe('HttpClient', () => {
     });
   });
 
+  // ─── sendMessage ──────────────────────────────────────────────────
+
+  describe('sendMessage()', () => {
+    test('returns disabled result when config is disabled', async () => {
+      const client = new HttpClient(createConfig({ enabled: false }));
+      const result = await client.sendMessage({ message: 'x' });
+      expect(result).toEqual({ success: false, reason: 'disabled' });
+    });
+
+    test('posts to /api/messages, never /api/errors, with client info', async () => {
+      const client = new HttpClient(createConfig());
+      const spy = jest.spyOn(client, '_sendWithRetry').mockResolvedValue({ success: true });
+
+      await client.sendMessage({ message: 'hello', level: 'info', platform: 'nodejs', breadcrumbs: [] });
+
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(spy.mock.calls[0][0]).toBe('https://trace.rivium.co/api/messages');
+      expect(spy.mock.calls[0][0]).not.toContain('/api/errors');
+      const payload = JSON.parse(spy.mock.calls[0][1]);
+      expect(payload).toEqual(expect.objectContaining({
+        message: 'hello',
+        level: 'info',
+        platform: 'nodejs',
+        breadcrumbs: [],
+        client: expect.objectContaining({ name: 'rivium-trace-nodejs', platform: 'nodejs' }),
+      }));
+      spy.mockRestore();
+    });
+
+    test('sends api key, server secret and User-Agent headers to the messages path', async () => {
+      const client = new HttpClient(createConfig());
+      const promise = client.sendMessage({ message: 'hdr' });
+      await Promise.resolve();
+
+      const options = https.request.mock.calls[0][0];
+      expect(options.path).toBe('/api/messages');
+      expect(options.method).toBe('POST');
+      expect(options.headers['x-api-key']).toBe('rv_live_testkey');
+      expect(options.headers['x-server-secret']).toBe('rv_srv_testsecret');
+      expect(options.headers['User-Agent']).toMatch(/^RiviumTrace-SDK\//);
+
+      simulateSuccessResponse(mockLastRequest, 201);
+      await expect(promise).resolves.toEqual({ success: true, statusCode: 201 });
+    });
+
+    test('retries on 5xx like sendError', async () => {
+      const client = new HttpClient(createConfig());
+      client.retryDelay = 0;
+      const reqSpy = jest.spyOn(client, '_makeRequest')
+        .mockRejectedValueOnce(new Error('HTTP 503: down'))
+        .mockResolvedValueOnce({ statusCode: 201, data: '' });
+
+      const result = await client.sendMessage({ message: 'retry' });
+
+      expect(reqSpy).toHaveBeenCalledTimes(2);
+      expect(reqSpy.mock.calls[1][0]).toBe('https://trace.rivium.co/api/messages');
+      expect(result).toEqual({ success: true, statusCode: 201 });
+    });
+  });
+
   // ─── _shouldRetry ────────────────────────────────────────────────
 
   describe('_shouldRetry()', () => {

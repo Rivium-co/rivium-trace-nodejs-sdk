@@ -159,3 +159,92 @@ describe('ExpressMiddleware (regression: instance-vs-static API)', () => {
     RiviumTrace.setRequestContext.mockRestore();
   });
 });
+
+describe('ExpressMiddleware error context (Console issue Context card)', () => {
+  const { _internal } = require('../lib/middleware/ExpressMiddleware');
+
+  afterEach(async () => {
+    await RiviumTrace.close();
+  });
+
+  const capture = (err, req, res) => {
+    RiviumTrace.init(validOptions());
+    const spy = jest.spyOn(RiviumTrace, 'captureException').mockResolvedValue();
+    createExpressMiddleware(RiviumTrace).errorHandler()(err, req, res, jest.fn());
+    const extra = spy.mock.calls[0][1].extra;
+    spy.mockRestore();
+    return extra;
+  };
+
+  test('sends the matched route template, mount path included, and the path without query', () => {
+    const extra = capture(
+      new Error('boom'),
+      fakeReq({ originalUrl: '/api/users/42?tab=orders', baseUrl: '/api', route: { path: '/users/:id' } }),
+      fakeRes()
+    );
+    expect(extra.request.route).toBe('/api/users/:id');
+    expect(extra.request.path).toBe('/api/users/42');
+  });
+
+  test('no matched route leaves request.route undefined', () => {
+    const extra = capture(new Error('boom'), fakeReq({ originalUrl: '/nope' }), fakeRes());
+    expect(extra.request.route).toBeUndefined();
+    expect(extra.request.path).toBe('/nope');
+  });
+
+  test('never sends request headers or body; redacts sensitive query / params', () => {
+    const extra = capture(
+      new Error('boom'),
+      fakeReq({
+        headers: { 'user-agent': 'jest', authorization: 'Bearer secret', cookie: 'sid=1' },
+        body: { email: 'a@b.c', password: 'hunter2' },
+        query: { page: '2', token: 'abc', api_key: 'k' },
+        params: { id: '42', resetCode: '999' },
+      }),
+      fakeRes()
+    );
+    expect(extra.request.headers).toBeUndefined();
+    expect(extra.request.body).toBeUndefined();
+    expect(extra.request.query).toEqual({ page: '2', token: '[REDACTED]', api_key: '[REDACTED]' });
+    expect(extra.request.params).toEqual({ id: '42', resetCode: '[REDACTED]' });
+    expect(extra.request.user_agent).toBe('jest');
+    expect(JSON.stringify(extra)).not.toMatch(/hunter2|Bearer secret|sid=1/);
+  });
+
+  test('status comes from err.status / err.statusCode, as Express final handler does', () => {
+    const notFound = Object.assign(new Error('nf'), { status: 404 });
+    expect(capture(notFound, fakeReq(), fakeRes()).response.statusCode).toBe(404);
+
+    const teapot = Object.assign(new Error('t'), { statusCode: 418 });
+    expect(capture(teapot, fakeReq(), fakeRes()).response.statusCode).toBe(418);
+  });
+
+  test('a plain error on a still-200 response reports 500, not 200', () => {
+    expect(capture(new Error('boom'), fakeReq(), fakeRes()).response.statusCode).toBe(500);
+  });
+
+  test('a status already set on the response wins over the 500 default', () => {
+    const res = fakeRes();
+    res.statusCode = 503;
+    expect(capture(new Error('boom'), fakeReq(), res).response.statusCode).toBe(503);
+  });
+
+  test('requestHandler records the path without the query string', () => {
+    RiviumTrace.init(validOptions());
+    const spy = jest.spyOn(RiviumTrace, 'setRequestContext');
+    createExpressMiddleware(RiviumTrace).requestHandler()(
+      fakeReq({ url: '/a?b=1', originalUrl: '/a?b=1' }), fakeRes(), jest.fn()
+    );
+    expect(spy.mock.calls[0][0].path).toBe('/a');
+    spy.mockRestore();
+  });
+
+  test('helpers are safe on odd input', () => {
+    expect(_internal.routeOf({})).toBeUndefined();
+    expect(_internal.routeOf({ route: { path: /regex/ } })).toBeUndefined();
+    expect(_internal.routeOf({ route: { path: '/' }, baseUrl: '' })).toBe('/');
+    expect(_internal.pathOf({})).toBeUndefined();
+    expect(_internal.statusOf(null, undefined)).toBe(500);
+    expect(_internal.statusOf({ status: 200 }, { statusCode: 200 })).toBe(500);
+  });
+});

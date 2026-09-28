@@ -50,8 +50,12 @@ export interface RiviumTraceInitOptions {
   captureUnhandledRejections?: boolean;
   /** Maximum breadcrumbs to keep (default: 50, max: 100) */
   maxBreadcrumbs?: number;
-  /** Callback to modify or filter errors before sending */
-  beforeSend?: (error: RiviumTraceError) => RiviumTraceError | null;
+  /**
+   * Callback to modify or filter events before sending. Return null to drop.
+   * Errors arrive as a RiviumTraceError; captureMessage() events arrive as a
+   * plain RiviumTraceMessage (no stack_trace).
+   */
+  beforeSend?(event: RiviumTraceError | RiviumTraceMessage): RiviumTraceError | RiviumTraceMessage | null;
   /**
    * Exceptions never worth reporting. A constructor, an error name, or a
    * RegExp matched against the name.
@@ -92,6 +96,30 @@ export interface RequestContext {
 
 export interface CaptureOptions {
   extra?: Record<string, unknown>;
+}
+
+/** Levels accepted by captureMessage(). 'warn' maps to 'warning', 'fatal' to 'error', 'trace' to 'debug'. */
+export type MessageLevel = 'debug' | 'info' | 'warning' | 'error';
+
+export interface CaptureMessageOptions {
+  /** Default: 'info' */
+  level?: MessageLevel | 'warn' | 'fatal' | 'trace';
+  extra?: Record<string, unknown>;
+  tags?: Record<string, string>;
+}
+
+/** Body captureMessage() sends to POST {apiUrl}/api/messages (plus `client`). */
+export interface RiviumTraceMessage {
+  message: string;
+  level: MessageLevel;
+  platform: string;
+  environment?: string;
+  release?: string;
+  timestamp: string;
+  user_id?: string;
+  extra?: Record<string, unknown>;
+  tags?: Record<string, string>;
+  breadcrumbs?: Array<Record<string, unknown>>;
 }
 
 export interface Scope {
@@ -148,7 +176,7 @@ export class RiviumTraceConfig {
   captureUncaughtExceptions: boolean;
   captureUnhandledRejections: boolean;
   maxBreadcrumbs: number;
-  beforeSend: ((error: RiviumTraceError) => RiviumTraceError | null) | null;
+  beforeSend: ((event: RiviumTraceError | RiviumTraceMessage) => RiviumTraceError | RiviumTraceMessage | null) | null;
   ignoredExceptions: Array<Function | string | RegExp>;
   ignoredPaths: Array<string | RegExp>;
   shouldCaptureException(error: Error): boolean;
@@ -157,6 +185,7 @@ export class RiviumTraceConfig {
   constructor(options: RiviumTraceInitOptions);
 
   getEndpoint(): string;
+  getMessagesEndpoint(): string;
   isEnabled(): boolean;
   shouldCaptureException(error: Error): boolean;
 }
@@ -344,8 +373,8 @@ declare class RiviumTrace {
   /** Capture an exception */
   static captureException(error: Error, options?: CaptureOptions): Promise<void>;
 
-  /** Capture a message */
-  static captureMessage(message: string, options?: CaptureOptions): Promise<void>;
+  /** Capture a message. Sent to /api/messages (Messages in the Console), not reported as an issue. */
+  static captureMessage(message: string, options?: CaptureMessageOptions): Promise<void>;
 
   /** Add a breadcrumb */
   static addBreadcrumb(breadcrumb: Breadcrumb | BreadcrumbOptions): void;

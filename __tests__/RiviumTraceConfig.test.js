@@ -274,6 +274,19 @@ describe('RiviumTraceConfig', () => {
     });
   });
 
+  describe('getMessagesEndpoint()', () => {
+    test('returns the API messages endpoint', () => {
+      const cfg = new RiviumTraceConfig(validOptions());
+      expect(cfg.getMessagesEndpoint()).toBe('https://trace.rivium.co/api/messages');
+    });
+
+    test('follows a custom apiUrl the same way as getEndpoint()', () => {
+      const cfg = new RiviumTraceConfig({ ...validOptions(), apiUrl: 'http://localhost:3001' });
+      expect(cfg.getMessagesEndpoint()).toBe('http://localhost:3001/api/messages');
+      expect(cfg.getEndpoint()).toBe('http://localhost:3001/api/errors');
+    });
+  });
+
   describe('isEnabled()', () => {
     test('returns true when enabled', () => {
       const cfg = new RiviumTraceConfig(validOptions());

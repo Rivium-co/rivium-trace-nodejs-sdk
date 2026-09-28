@@ -92,11 +92,29 @@ RiviumTrace.captureException(error, {
   }
 });
 
-// Capture a message
-RiviumTrace.captureMessage('Something happened', {
-  extra: { context: 'additional info' }
+```
+
+### Capturing Messages
+
+`captureMessage()` records something worth knowing that is not an error. Messages
+go to `POST {apiUrl}/api/messages` and show up under **Messages** in the Console;
+they are never reported as issues.
+
+```javascript
+RiviumTrace.captureMessage('Payment provider switched to fallback', {
+  level: 'warning',                        // 'debug' | 'info' | 'warning' | 'error' (default 'info')
+  extra: { provider: 'stripe', attempt: 2 },
+  tags: { region: 'eu' }
 });
 ```
+
+- `level` also accepts `'warn'` (sent as `warning`), `'fatal'` (sent as `error`) and
+  `'trace'` (sent as `debug`); anything else is sent as `info`.
+- The 10 most recent breadcrumbs, the user id from `setUser()`, the environment and
+  the release are attached automatically. Request and user context set with
+  `setRequestContext()` / `setUser()` go into `extra`.
+- `sampleRate`, rate limiting and `beforeSend` apply to messages too. `beforeSend`
+  receives the plain message object (it has no `stack_trace`); return `null` to drop it.
 
 ### Breadcrumbs
 
@@ -235,6 +253,19 @@ app.use(middleware.errorHandler());
 
 app.listen(3000);
 ```
+
+Errors caught by `errorHandler()` carry the request and the response status:
+
+| Key | Example |
+|-----|---------|
+| `request.method` | `GET` |
+| `request.path` | `/api/users/42` (no query string) |
+| `request.route` | `/api/users/:id` (the matched route, mount path included) |
+| `request.url` | `/api/users/42?tab=orders` |
+| `response.statusCode` | `404` from `err.status` / `err.statusCode`, else `500` |
+
+Every error also carries `node_context` (`node_version`, `platform`, `arch`,
+`memory_usage`, `uptime`, `pid`) and `_sdk.sdk_version`.
 
 ## Advanced Usage
 

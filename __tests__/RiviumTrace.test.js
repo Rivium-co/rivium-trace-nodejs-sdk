@@ -6,6 +6,7 @@ const { Breadcrumb } = require('../lib/models/Breadcrumb');
 jest.mock('../lib/handlers/HttpClient', () => {
   return jest.fn().mockImplementation(() => ({
     sendError: jest.fn().mockResolvedValue({ success: true, statusCode: 200 }),
+    sendMessage: jest.fn().mockResolvedValue({ success: true, statusCode: 201 }),
   }));
 });
 
@@ -213,47 +214,135 @@ describe('RiviumTrace', () => {
   // ─── captureMessage ───────────────────────────────────────────────
 
   describe('captureMessage()', () => {
+    const sent = () => RiviumTrace._instance._httpClient.sendMessage.mock.calls[0][0];
+
     test('resolves silently when not initialized', async () => {
       const result = await RiviumTrace.captureMessage('no init');
       expect(result).toBeUndefined();
     });
 
-    test('sends message via HTTP client', async () => {
+    test('sends via sendMessage and never via sendError', async () => {
       RiviumTrace.init(validOptions());
       await RiviumTrace.captureMessage('test message');
 
-      expect(RiviumTrace._instance._httpClient.sendError).toHaveBeenCalled();
-      const sentError = RiviumTrace._instance._httpClient.sendError.mock.calls[0][0];
-      expect(sentError.message).toBe('test message');
+      expect(RiviumTrace._instance._httpClient.sendMessage).toHaveBeenCalledTimes(1);
+      expect(RiviumTrace._instance._httpClient.sendError).not.toHaveBeenCalled();
+      expect(sent().message).toBe('test message');
     });
 
-    test('includes extra options', async () => {
+    test('builds the /api/messages payload shape', async () => {
+      RiviumTrace.init({ ...validOptions(), environment: 'staging', release: '9.9.9' });
+      await RiviumTrace.captureMessage('shape');
+
+      const msg = sent();
+      expect(msg).toEqual(expect.objectContaining({
+        message: 'shape',
+        level: 'info',
+        platform: 'nodejs',
+        environment: 'staging',
+        release: '9.9.9',
+        tags: {},
+      }));
+      expect(new Date(msg.timestamp).toISOString()).toBe(msg.timestamp);
+      expect(msg.stack_trace).toBeUndefined();
+      expect(Array.isArray(msg.breadcrumbs)).toBe(true);
+    });
+
+    test('carries _sdk.sdk_version in extra, keeping one the app set', async () => {
       RiviumTrace.init(validOptions());
-      const sendSpy = RiviumTrace._instance._httpClient.sendError;
+      const { SDK_VERSION } = require('../lib/config/RiviumTraceConfig');
+      await RiviumTrace.captureMessage('v');
+      expect(sent().extra._sdk).toEqual({ sdk_version: SDK_VERSION });
 
-      await RiviumTrace.captureMessage('msg', { extra: { detail: 'info' } });
+      RiviumTrace._instance._httpClient.sendMessage.mockClear();
+      await RiviumTrace.captureMessage('v2', { extra: { _sdk: { sdk_version: 'x' } } });
+      expect(sent().extra._sdk).toEqual({ sdk_version: 'x' });
+    });
 
-      const sentError = sendSpy.mock.calls[0][0];
-      expect(sentError.extra.detail).toBe('info');
+    test('defaults level to info and accepts the four message levels', async () => {
+      RiviumTrace.init(validOptions());
+      const send = RiviumTrace._instance._httpClient.sendMessage;
+      for (const level of ['debug', 'info', 'warning', 'error']) {
+        await RiviumTrace.captureMessage(`lvl ${level}`, { level });
+      }
+      expect(send.mock.calls.map((c) => c[0].level)).toEqual(['debug', 'info', 'warning', 'error']);
+    });
+
+    test('maps warn, fatal, trace and unknown levels', async () => {
+      RiviumTrace.init(validOptions());
+      const send = RiviumTrace._instance._httpClient.sendMessage;
+      await RiviumTrace.captureMessage('a', { level: 'warn' });
+      await RiviumTrace.captureMessage('b', { level: 'fatal' });
+      await RiviumTrace.captureMessage('c', { level: 'trace' });
+      await RiviumTrace.captureMessage('d', { level: 'nonsense' });
+      expect(send.mock.calls.map((c) => c[0].level)).toEqual(['warning', 'error', 'debug', 'info']);
+    });
+
+    test('includes extra and tags', async () => {
+      RiviumTrace.init(validOptions());
+      await RiviumTrace.captureMessage('msg', { extra: { detail: 'info' }, tags: { region: 'eu' } });
+
+      expect(sent().extra.detail).toBe('info');
+      expect(sent().tags).toEqual({ region: 'eu' });
+    });
+
+    test('puts the 10 most recent breadcrumbs at the top level, not in extra', async () => {
+      RiviumTrace.init(validOptions());
+      for (let i = 0; i < 12; i++) {
+        RiviumTrace.addBreadcrumb({ message: `crumb ${i}`, category: 'test' });
+      }
+      await RiviumTrace.captureMessage('with crumbs');
+
+      const msg = sent();
+      expect(msg.breadcrumbs).toHaveLength(10);
+      expect(msg.breadcrumbs[0].message).toBe('crumb 2');
+      expect(msg.breadcrumbs[9].message).toBe('crumb 11');
+      expect(msg.extra.breadcrumbs).toBeUndefined();
+    });
+
+    test('sets user_id from the user context', async () => {
+      RiviumTrace.init(validOptions());
+      RiviumTrace.setUser({ id: 42, email: 'a@b.c' });
+      await RiviumTrace.captureMessage('user msg');
+
+      expect(sent().user_id).toBe('42');
+      expect(sent().extra.user_context).toEqual({ id: 42, email: 'a@b.c' });
+    });
+
+    test('omits user_id without a user', async () => {
+      RiviumTrace.init(validOptions());
+      await RiviumTrace.captureMessage('anon');
+      expect(sent().user_id).toBeUndefined();
     });
 
     test('skips when beforeSend returns falsy', async () => {
       RiviumTrace.init({ ...validOptions(), beforeSend: () => null });
-      const sendSpy = RiviumTrace._instance._httpClient.sendError;
-
       await RiviumTrace.captureMessage('filtered');
 
-      expect(sendSpy).not.toHaveBeenCalled();
+      expect(RiviumTrace._instance._httpClient.sendMessage).not.toHaveBeenCalled();
+      expect(RiviumTrace._instance._httpClient.sendError).not.toHaveBeenCalled();
     });
 
-    test('includes node context', async () => {
-      RiviumTrace.init(validOptions());
-      const sendSpy = RiviumTrace._instance._httpClient.sendError;
+    test('beforeSend receives the message object and can modify it', async () => {
+      const beforeSend = jest.fn((event) => ({ ...event, tags: { scrubbed: 'yes' } }));
+      RiviumTrace.init({ ...validOptions(), beforeSend });
+      await RiviumTrace.captureMessage('modify me');
 
-      await RiviumTrace.captureMessage('with context');
+      expect(beforeSend.mock.calls[0][0].message).toBe('modify me');
+      expect(beforeSend.mock.calls[0][0].level).toBe('info');
+      expect(sent().tags).toEqual({ scrubbed: 'yes' });
+    });
 
-      const sentError = sendSpy.mock.calls[0][0];
-      expect(sentError.extra.node_context).toBeDefined();
+    test('respects sample rate', async () => {
+      RiviumTrace.init({ ...validOptions(), sampleRate: 0 });
+      await RiviumTrace.captureMessage('sampled out');
+      expect(RiviumTrace._instance._httpClient.sendMessage).not.toHaveBeenCalled();
+    });
+
+    test('does not send when disabled', async () => {
+      RiviumTrace.init({ ...validOptions(), enabled: false });
+      await RiviumTrace.captureMessage('disabled');
+      expect(RiviumTrace._instance._httpClient.sendMessage).not.toHaveBeenCalled();
     });
   });
 

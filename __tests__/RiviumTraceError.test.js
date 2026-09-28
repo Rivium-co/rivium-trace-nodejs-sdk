@@ -133,15 +133,31 @@ describe('RiviumTraceError', () => {
       const json = err.toJSON();
 
       expect(json.breadcrumbs).toEqual(breadcrumbs);
-      expect(json.extra).toEqual({ foo: 'bar' });
+      expect(json.extra).toEqual({ foo: 'bar', _sdk: { sdk_version: SDK_VERSION } });
       expect(json.extra.breadcrumbs).toBeUndefined();
     });
 
-    test('does not include extra key when extra is empty after breadcrumb extraction', () => {
+    test('extra holds only the SDK version when nothing else is left after breadcrumb extraction', () => {
       const err = new RiviumTraceError({ extra: { breadcrumbs: [] } });
       const json = err.toJSON();
       expect(json.breadcrumbs).toEqual([]);
-      expect(json.extra).toBeUndefined();
+      expect(json.extra).toEqual({ _sdk: { sdk_version: SDK_VERSION } });
+    });
+
+    test('sends _sdk.sdk_version and keeps _sdk values the app set', () => {
+      expect(new RiviumTraceError().toJSON().extra._sdk).toEqual({ sdk_version: SDK_VERSION });
+
+      const err = new RiviumTraceError({ extra: { _sdk: { sdk_version: '9.9.9', custom: 1 } } });
+      expect(err.toJSON().extra._sdk).toEqual({ sdk_version: '9.9.9', custom: 1 });
+      // toJSON must not write _sdk back onto the error.
+      expect(err.extra._sdk).toEqual({ sdk_version: '9.9.9', custom: 1 });
+      expect(new RiviumTraceError({ extra: { a: 1 } }).extra._sdk).toBeUndefined();
+    });
+
+    test('the user agent names the SDK version', () => {
+      expect(new RiviumTraceError().toJSON().user_agent).toMatch(
+        new RegExp(`^RiviumTrace-SDK/${SDK_VERSION.replace(/\./g, '\\.')} \\(nodejs; [^;]+; Node\\.js v[\\d.]+\\)$`)
+      );
     });
 
     test('does not include breadcrumbs key when none provided', () => {
@@ -153,7 +169,7 @@ describe('RiviumTraceError', () => {
     test('includes extra when it has non-breadcrumb data', () => {
       const err = new RiviumTraceError({ extra: { customField: 'value' } });
       const json = err.toJSON();
-      expect(json.extra).toEqual({ customField: 'value' });
+      expect(json.extra).toEqual({ customField: 'value', _sdk: { sdk_version: SDK_VERSION } });
     });
 
     test('does not mutate the original extra object', () => {
@@ -311,7 +327,9 @@ describe('RiviumTraceError', () => {
       expect(err.extra.request.url).toBe('/api/users');
       expect(err.extra.request.ip).toBe('127.0.0.1');
       expect(err.url).toBe('/api/users');
-      expect(err.user_agent).toBe('Mozilla/5.0');
+      // The event's user agent stays the SDK's; the client's goes with the request.
+      expect(err.user_agent).toMatch(/^RiviumTrace-SDK\//);
+      expect(err.extra.request.user_agent).toBe('Mozilla/5.0');
     });
 
     test('returns the error instance for chaining', () => {
@@ -335,7 +353,8 @@ describe('RiviumTraceError', () => {
         headers: { 'user-agent': 'FallbackAgent' },
       };
       err.setRequestContext(req);
-      expect(err.user_agent).toBe('FallbackAgent');
+      expect(err.extra.request.user_agent).toBe('FallbackAgent');
+      expect(err.user_agent).toMatch(/^RiviumTrace-SDK\//);
     });
 
     test('falls back to connection.remoteAddress when req.ip is missing', () => {
