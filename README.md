@@ -294,7 +294,7 @@ RiviumTrace.init({
 ```javascript
 process.on('SIGTERM', async () => {
   console.log('Shutting down...');
-  await RiviumTrace.flush(2000); // Wait up to 2s for pending errors
+  await RiviumTrace.flush(2000); // Send what is waiting; false if 2s is not enough
   await RiviumTrace.close();
   process.exit(0);
 });

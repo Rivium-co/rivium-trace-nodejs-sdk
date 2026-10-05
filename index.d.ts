@@ -29,6 +29,20 @@ export type ExpressLikeRequestHandler = (
   next: (error?: unknown) => void,
 ) => void;
 
+export type ExpressLikeErrorHandler = (
+  error: unknown,
+  req: ExpressLikeRequest,
+  res: unknown,
+  next: (error?: unknown) => void,
+) => void;
+
+export interface ExpressMiddleware {
+  /** Records the request (method, path, status, duration) as context and breadcrumbs */
+  requestHandler(): ExpressLikeRequestHandler;
+  /** Reports errors passed to `next(error)` */
+  errorHandler(): ExpressLikeErrorHandler;
+}
+
 export interface RiviumTraceInitOptions {
   /** Your RiviumTrace API key from Console (required) - format: rv_live_xxx */
   apiKey: string;
@@ -385,8 +399,8 @@ declare class RiviumTrace {
   /** Set user context */
   static setUser(user: UserContext): void;
 
-  /** Express error handling middleware */
-  static expressMiddleware(): ExpressLikeRequestHandler;
+  /** Express middleware: `app.use(mw.requestHandler())` first, `app.use(mw.errorHandler())` last */
+  static expressMiddleware(): ExpressMiddleware;
 
   /** Get current configuration */
   static getConfig(): RiviumTraceConfig | null;

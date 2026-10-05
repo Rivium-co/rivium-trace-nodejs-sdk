@@ -248,3 +248,25 @@ describe('ExpressMiddleware error context (Console issue Context card)', () => {
     expect(_internal.statusOf({ status: 200 }, { statusCode: 200 })).toBe(500);
   });
 });
+
+describe('safeUrl', () => {
+  const { _internal } = require('../lib/middleware/ExpressMiddleware');
+  const url = (u) => _internal.safeUrl({ originalUrl: u });
+
+  test('keeps an address without a query string', () => {
+    expect(url('/users/42')).toBe('/users/42');
+  });
+
+  test('replaces the values of sensitive parameters and keeps the rest', () => {
+    expect(url('/reset?token=abc123&page=2&password=x%20y')).toBe('/reset?token=[REDACTED]&page=2&password=[REDACTED]');
+    expect(url('/cb?access_token=zzz&state=1')).toBe('/cb?access_token=[REDACTED]&state=1');
+    expect(url('/x?api%5Fkey=1&q=hello')).toBe('/x?api%5Fkey=[REDACTED]&q=hello');
+  });
+
+  test('copes with odd input', () => {
+    expect(url('/x?')).toBe('/x?');
+    expect(url('/x?flag&token')).toBe('/x?flag&token');
+    expect(url('/x?%E0%A4%A=1')).toBe('/x?%E0%A4%A=1');
+    expect(_internal.safeUrl({})).toBeUndefined();
+  });
+});

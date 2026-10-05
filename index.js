@@ -204,7 +204,12 @@ class RiviumTrace {
   // Express middleware
   static expressMiddleware() {
     if (!RiviumTrace._instance?._isInitialized) {
-      return (req, res, next) => next(); // No-op if not initialized
+      // Not initialized: handlers that do nothing, in the same shape as the
+      // real middleware (and still callable as a plain request handler).
+      const noop = (req, res, next) => next();
+      noop.requestHandler = () => (req, res, next) => next();
+      noop.errorHandler = () => (error, req, res, next) => next(error);
+      return noop;
     }
     return createExpressMiddleware(RiviumTrace._instance);
   }
