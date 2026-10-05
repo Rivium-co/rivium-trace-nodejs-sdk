@@ -343,7 +343,7 @@ process.setSourceMapsEnabled(true);
 
 ## Requirements
 
-- Node.js >= 12.0.0
+- Node.js >= 14.0.0
 - Express >= 4.0.0 (optional, for Express middleware)
 
 ## License

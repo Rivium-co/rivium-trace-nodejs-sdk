@@ -34,6 +34,15 @@ class RiviumTrace {
     this._logService = null;
     this._performanceClient = null;
     this._sampleRate = 1.0;
+    // Error and message requests that are on their way; flush() waits for them.
+    this._pendingSends = new Set();
+  }
+
+  _trackSend(promise) {
+    this._pendingSends.add(promise);
+    const done = () => this._pendingSends.delete(promise);
+    promise.then(done, done);
+    return promise;
   }
 
   static get instance() {
@@ -273,7 +282,7 @@ class RiviumTrace {
     }
 
     // Send error
-    const result = await this._httpClient.sendError(riviumTraceError);
+    const result = await this._trackSend(this._httpClient.sendError(riviumTraceError));
 
     if (!result.success && this._config.debug) {
       console.log(`[RiviumTrace] Failed to send error: ${result.error || result.reason}`);
@@ -292,7 +301,7 @@ class RiviumTrace {
       return;
     }
 
-    const result = await this._httpClient.sendMessage(riviumTraceMessage);
+    const result = await this._trackSend(this._httpClient.sendMessage(riviumTraceMessage));
 
     if (!result.success && this._config.debug) {
       console.log(`[RiviumTrace] Failed to send message: ${result.error || result.reason}`);
@@ -343,15 +352,26 @@ class RiviumTrace {
     };
   }
 
-  // Flush pending errors (useful before shutdown)
+  // Send everything that is still waiting: errors and messages on their way, buffered
+  // logs and buffered performance spans. Call it before the process exits.
+  // Resolves true when all of it went out within the timeout, false otherwise. Never rejects.
   static async flush(timeout = 5000) {
-    if (!RiviumTrace._instance?._isInitialized) return true;
+    const instance = RiviumTrace._instance;
+    if (!instance?._isInitialized) return true;
 
-    // In a real implementation, you might want to wait for pending HTTP requests
-    // For now, we'll just wait a bit for any ongoing requests
-    return new Promise((resolve) => {
-      setTimeout(() => resolve(true), Math.min(timeout, 1000));
+    const work = Promise.all([
+      Promise.all([...instance._pendingSends].map((send) => send.catch(() => {}))),
+      instance._logService ? instance._logService.flush() : true,
+      instance._performanceClient ? instance._performanceClient.flush() : true
+    ]).then(() => true, () => false);
+
+    let timer;
+    const timedOut = new Promise((resolve) => {
+      timer = setTimeout(() => resolve(false), timeout);
     });
+    const result = await Promise.race([work, timedOut]);
+    clearTimeout(timer);
+    return result;
   }
 
   // ==================== PERFORMANCE ====================

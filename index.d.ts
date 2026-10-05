@@ -400,7 +400,10 @@ declare class RiviumTrace {
   /** Get current stats */
   static getStats(): Stats | null;
 
-  /** Flush pending errors before shutdown */
+  /**
+   * Send everything that is still waiting (errors, messages, logs, performance spans).
+   * Resolves true when all of it went out within the timeout (default 5000 ms), false otherwise.
+   */
   static flush(timeout?: number): Promise<boolean>;
 
   /** Close and cleanup RiviumTrace */

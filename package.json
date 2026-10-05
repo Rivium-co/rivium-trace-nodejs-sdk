@@ -1,6 +1,6 @@
 {
   "name": "@rivium-trace/nodejs-sdk",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "RiviumTrace Node.js SDK for server-side error tracking and monitoring",
   "main": "index.js",
   "types": "index.d.ts",
@@ -57,7 +57,7 @@
     "access": "public"
   },
   "engines": {
-    "node": ">=12.0.0"
+    "node": ">=14.0.0"
   },
   "peerDependencies": {
     "express": ">=4.0.0"
